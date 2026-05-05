@@ -115,12 +115,14 @@ const char* password = WIFI_PASSWORD;
 float temperatureC = 0;
 
 // Tachometer interrupt functions.
-// Real PC fans top out around 3000 RPM × 2 pulses/rev = 100 Hz at the tach line
-// (10 ms between pulses). 5 ms debounce still admits any real fan up to 6000
-// RPM (no PC fan reaches that) but rejects PWM crosstalk and ringing.
+// PSU ripple (120 Hz on US mains, 100 Hz EU) couples onto the tach line at
+// low PWM duty cycles, producing false pulses ~8-10 ms apart. A 10 ms
+// debounce rejects that ripple while still admitting any fan up to 6000 RPM
+// (no consumer PC fan reaches that). For a true hardware fix, add a 100 nF
+// cap from each tach pin to GND.
 // micros() rolls over at ~70 minutes; the unsigned subtraction handles wrap.
 volatile unsigned long lastTach1Us = 0, lastTach2Us = 0, lastTach3Us = 0, lastTach4Us = 0;
-const unsigned long TACH_DEBOUNCE_US = 5000;
+const unsigned long TACH_DEBOUNCE_US = 10000;
 
 void IRAM_ATTR tachISR1() {
   unsigned long now = micros();
