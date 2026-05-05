@@ -479,18 +479,26 @@ function updateFan(type, val) {
     .catch(() => status('failed', 'statusLine'));
 }
 function setMode(m) {
-  fetch('/mode?m=' + m).then(() => status('mode: ' + m));
+  fetch('/mode?m=' + m)
+    .then(() => status('mode: ' + m))
+    .catch(() => status('failed'));
 }
 function setSetpoint() {
   const v = document.getElementById('setpoint').value;
-  fetch('/setpoint?val=' + v).then(() => status('setpoint: ' + v + ' C'));
+  fetch('/setpoint?val=' + v)
+    .then(() => status('setpoint: ' + v + ' C'))
+    .catch(() => status('failed'));
 }
 function runPWMTest() {
-  fetch('/test').then(() => status('PWM test running', 'diagLine'));
+  fetch('/test')
+    .then(() => status('PWM test running', 'diagLine'))
+    .catch(() => status('failed', 'diagLine'));
 }
 function setManualPWM() {
   const v = document.getElementById('manualPWM').value;
-  fetch('/manual?pwm=' + v).then(() => status('manual PWM ' + v, 'diagLine'));
+  fetch('/manual?pwm=' + v)
+    .then(() => status('manual PWM ' + v, 'diagLine'))
+    .catch(() => status('failed', 'diagLine'));
 }
 function refresh() {
   fetch('/status').then(r => r.json()).then(s => {
