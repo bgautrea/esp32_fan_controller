@@ -115,11 +115,12 @@ const char* password = WIFI_PASSWORD;
 float temperatureC = 0;
 
 // Tachometer interrupt functions.
-// Real PC fans top out around 3000 RPM × 2 pulses/rev = 100 Hz at the tach line,
-// so any pulse-pair tighter than 200 us is electrical noise, not the fan.
+// Real PC fans top out around 3000 RPM × 2 pulses/rev = 100 Hz at the tach line
+// (10 ms between pulses). 1 ms debounce still admits any real fan up to ~15000
+// RPM but rejects high-frequency noise / PWM crosstalk.
 // micros() rolls over at ~70 minutes; the unsigned subtraction handles wrap.
 volatile unsigned long lastTach1Us = 0, lastTach2Us = 0, lastTach3Us = 0, lastTach4Us = 0;
-const unsigned long TACH_DEBOUNCE_US = 200;
+const unsigned long TACH_DEBOUNCE_US = 1000;
 
 void IRAM_ATTR tachISR1() {
   unsigned long now = micros();
