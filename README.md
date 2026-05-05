@@ -48,14 +48,14 @@ A WiFi-enabled smart fan controller built on ESP32 that provides web-based PWM f
 
 ### Required Libraries
 ```
-ESPAsyncWebServer
+ESP Async WebServer
 DHT sensor library
 ```
 
 Install via Arduino IDE Library Manager:
 1. `Tools` → `Manage Libraries`
 2. Search and install:
-   - "ESPAsyncWebServer" by Hristo Gochkov
+   - "ESP Async WebServer" by ESP32Async
    - "DHT sensor library" by Adafruit
 
 ## 🚀 Installation
@@ -85,10 +85,26 @@ Create a `secrets.h` file in the project directory:
 ```
 
 ### 3. Upload Firmware
-1. Open `esp32-fan-controller.ino` in Arduino IDE
+1. Open `esp32_fan_controller.ino` in Arduino IDE
 2. Select your ESP32 board: `Tools` → `Board` → `ESP32 Dev Module`
 3. Select the correct port: `Tools` → `Port`
 4. Click **Upload**
+
+#### Or via arduino-cli (no GUI required)
+
+```bash
+# One-time setup
+arduino-cli core install esp32:esp32
+arduino-cli lib install "DHT sensor library" "ESP Async WebServer" "Async TCP"
+
+# Build and flash via USB serial
+arduino-cli compile --fqbn esp32:esp32:esp32 .
+arduino-cli upload  --fqbn esp32:esp32:esp32 -p /dev/ttyUSB0 .
+
+# Or build and OTA-upload over WiFi
+arduino-cli upload --fqbn esp32:esp32:esp32 \
+  -p <esp32-ip> --upload-field password=<OTA_PASSWORD> .
+```
 
 ### 4. Find Your Device
 Check the Serial Monitor (115200 baud) for the IP address:
@@ -111,6 +127,13 @@ http://192.168.1.100
 - **RPM Monitoring**: Real-time display of fan speeds
 - **Manual PWM Testing**: Direct PWM value input for troubleshooting
 
+### HTTP API
+- `GET /status` — JSON snapshot of all state
+- `GET /mode?m=manual|ambient|server` — set operating mode
+- `GET /setpoint?val=N` — set PI target (40–95 °C)
+- `GET /set?fan=intake|exhaust&val=N` — set manual PWM
+- `GET /debug/server-temp` — last server-temp scrape result
+
 ### Temperature Thresholds (Auto Mode)
 | Temperature | Fan Speed |
 |-------------|-----------|
@@ -119,6 +142,22 @@ http://192.168.1.100
 | 30-35°C | 71% (180 PWM) |
 | > 35°C | 100% (255 PWM) |
 
+### Server-Temp Auto Mode
+
+If you set `Mode` to "Auto (server CPU temp)", the controller scrapes
+`http://192.168.0.110:9101/metrics` every 10 seconds, averages the two
+`node_thermal_zone_temp_celsius{type="x86_pkg_temp"}` zones, and runs a
+small PI controller that targets the configured **setpoint** (default
+70 °C). PWM output is clamped to `[pwmMin, 255]`.
+
+Edit `METRICS_URL` near the top of `esp32_fan_controller.ino` to
+match your own metrics endpoint.
+
+If the metrics endpoint stops responding for more than 60 seconds, the
+controller falls back to the ambient (DHT22) step curve with a safety
+PWM floor of 128 and surfaces `controlSource: "fallback-stale"` in
+`/status`.
+
 ## 🔄 OTA Updates
 
 After initial USB upload, you can update wirelessly:
@@ -126,6 +165,12 @@ After initial USB upload, you can update wirelessly:
 1. In Arduino IDE: `Tools` → `Port` → `Network Ports` → `ESP32-FanController`
 2. Enter your OTA password when prompted
 3. Upload normally - it goes over WiFi!
+
+Or via arduino-cli (no GUI):
+```bash
+arduino-cli upload --fqbn esp32:esp32:esp32 \
+  -p <esp32-ip> --upload-field password=<your-OTA-password> .
+```
 
 ## 🔧 Configuration
 
