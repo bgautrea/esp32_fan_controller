@@ -4,6 +4,41 @@
 #include <ArduinoOTA.h>
 #include <DHT.h>
 #include "secrets.h"  // Include our secrets file
+#include <Preferences.h>
+
+Preferences prefs;
+
+struct Settings {
+  uint8_t intakePWM = 128;
+  uint8_t exhaustPWM = 128;
+  uint8_t mode       = 0;   // 0 = manual, 1 = auto-ambient, 2 = auto-server
+  uint8_t setpointC  = 70;
+  uint8_t pwmMin     = 60;
+};
+Settings settings;
+
+void loadSettings() {
+  prefs.begin("fanctl", true);  // read-only
+  settings.intakePWM  = prefs.getUChar("ipwm", 128);
+  settings.exhaustPWM = prefs.getUChar("epwm", 128);
+  settings.mode       = prefs.getUChar("mode", 0);
+  settings.setpointC  = prefs.getUChar("set",  70);
+  settings.pwmMin     = prefs.getUChar("pmin", 60);
+  prefs.end();
+  Serial.printf("[settings] loaded ipwm=%u epwm=%u mode=%u set=%u pmin=%u\n",
+                settings.intakePWM, settings.exhaustPWM, settings.mode,
+                settings.setpointC, settings.pwmMin);
+}
+
+void saveSettings() {
+  prefs.begin("fanctl", false);
+  prefs.putUChar("ipwm", settings.intakePWM);
+  prefs.putUChar("epwm", settings.exhaustPWM);
+  prefs.putUChar("mode", settings.mode);
+  prefs.putUChar("set",  settings.setpointC);
+  prefs.putUChar("pmin", settings.pwmMin);
+  prefs.end();
+}
 
 #define PWM_FREQ     25000
 #define PWM_RES      8
@@ -49,11 +84,6 @@ AsyncWebServer server(80);
 const char* ssid = WIFI_SSID;
 const char* password = WIFI_PASSWORD;
 
-// Fan speed (0-255)
-int intakePWM = 128;
-int exhaustPWM = 128;
-bool autoMode = false;
-
 float temperatureC = 0;
 
 // Tachometer interrupt functions
@@ -73,20 +103,20 @@ void setupPWM(int pin) {
 }
 
 void applyFanSpeeds() {
-  int intakeValue = autoMode ? computePWMFromTemp() : intakePWM;
-  int exhaustValue = autoMode ? computePWMFromTemp() : exhaustPWM;
+  int intakeValue = (settings.mode != 0) ? computePWMFromTemp() : settings.intakePWM;
+  int exhaustValue = (settings.mode != 0) ? computePWMFromTemp() : settings.exhaustPWM;
 
   ledcWrite(intakeFan1, intakeValue);
   ledcWrite(intakeFan2, intakeValue);
   ledcWrite(exhaustFan1, exhaustValue);
   ledcWrite(exhaustFan2, exhaustValue);
-  
+
   // Debug output with more detail
   Serial.println("=== PWM Update ===");
-  Serial.println("Auto mode: " + String(autoMode ? "ON" : "OFF"));
+  Serial.println("Auto mode: " + String((settings.mode != 0) ? "ON" : "OFF"));
   Serial.println("Temperature: " + String(temperatureC) + "°C");
-  Serial.println("Intake PWM target: " + String(intakePWM) + " -> Applied: " + String(intakeValue));
-  Serial.println("Exhaust PWM target: " + String(exhaustPWM) + " -> Applied: " + String(exhaustValue));
+  Serial.println("Intake PWM target: " + String(settings.intakePWM) + " -> Applied: " + String(intakeValue));
+  Serial.println("Exhaust PWM target: " + String(settings.exhaustPWM) + " -> Applied: " + String(exhaustValue));
   Serial.println("Pin " + String(intakeFan1) + " set to: " + String(intakeValue));
   Serial.println("==================");
 }
@@ -130,6 +160,7 @@ void setup() {
   Serial.begin(115200);
   delay(1000);
   Serial.println("\n=== ESP32 Fan Controller Starting ===");
+  loadSettings();
   Serial.println("Fan connected to PWM pin: " + String(intakeFan1));
   Serial.println("Fan connected to TACH pin: " + String(intakeFan1Tach));
 
@@ -296,8 +327,9 @@ void setup() {
       String fan = request->getParam("fan")->value();
       int val = request->getParam("val")->value().toInt();
       Serial.println("Setting " + fan + " fan to " + String(val));
-      if (fan == "intake") intakePWM = val;
-      else if (fan == "exhaust") exhaustPWM = val;
+      if (fan == "intake") settings.intakePWM = val;
+      else if (fan == "exhaust") settings.exhaustPWM = val;
+      saveSettings();
       applyFanSpeeds();
     }
     request->send(200, "text/plain", "OK");
@@ -305,7 +337,8 @@ void setup() {
 
   server.on("/auto", HTTP_GET, [](AsyncWebServerRequest *request){
     if (request->hasParam("mode")) {
-      autoMode = request->getParam("mode")->value() == "1";
+      settings.mode = (request->getParam("mode")->value() == "1") ? 1 : 0;
+      saveSettings();
       applyFanSpeeds();
     }
     request->send(200, "text/plain", "OK");
@@ -373,7 +406,7 @@ void loop() {
   if (millis() - lastTempRead > 3000) {
     lastTempRead = millis();
     readTemp();
-    if (autoMode) {
+    if (settings.mode != 0) {
       applyFanSpeeds();
     }
   }
