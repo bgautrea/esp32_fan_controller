@@ -187,7 +187,8 @@ bool parsePrometheusBody(const String& body, float* avgOut) {
         // Look for x86_pkg_temp within this line only
         int ttIdx = body.indexOf("x86_pkg_temp", idx);
         if (ttIdx >= 0 && ttIdx < lineEnd) {
-          // Value follows the last space on the line
+          // Value follows the last space on the line.
+          // Assumes no per-sample timestamp column (standard node_exporter default).
           int sp = body.lastIndexOf(' ', lineEnd - 1);
           if (sp > idx) {
             String valStr = body.substring(sp + 1, lineEnd);
@@ -213,10 +214,9 @@ bool fetchServerTemp(float* out) {
   HTTPClient http;
   http.setConnectTimeout(2000);
   http.setTimeout(3000);
-  if (!http.begin(METRICS_URL)) {
-    Serial.println("[metrics] http.begin failed");
-    return false;
-  }
+  // http.begin() on ESP32 core only parses the URL; connection happens in GET().
+  // Failures surface as a non-200 response code below.
+  http.begin(METRICS_URL);
   int code = http.GET();
   if (code != 200) {
     Serial.printf("[metrics] HTTP %d\n", code);
