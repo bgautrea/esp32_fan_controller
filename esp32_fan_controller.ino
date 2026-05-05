@@ -394,82 +394,136 @@ void setup() {
   // Web server endpoints
   server.on("/", HTTP_GET, [](AsyncWebServerRequest *request){
     String html = R"rawliteral(
-      <!DOCTYPE html><html><head>
-      <title>Fan Controller</title>
-      <style>
-        body { font-family: Arial, sans-serif; margin: 20px; }
-        .fan-section { border: 1px solid #ccc; margin: 10px 0; padding: 15px; }
-        .rpm-display { font-weight: bold; color: #007acc; }
-      </style>
-      </head><body>
-      <h1>Fan Controller</h1>
-      <div class="fan-section">
-        <h2>Intake Fans</h2>
-        <h3>Speed: <span id="intVal">128</span></h3>
-        <input type="range" min="0" max="255" value="128" id="intakeSlider" onchange="updateFan('intake', this.value)">
-        <p>Fan 1 RPM: <span id="rpm1" class="rpm-display">--</span></p>
-        <p>Fan 2 RPM: <span id="rpm2" class="rpm-display">--</span></p>
-      </div>
-      
-      <div class="fan-section">
-        <h2>Exhaust Fans</h2>
-        <h3>Speed: <span id="extVal">128</span></h3>
-        <input type="range" min="0" max="255" value="128" id="exhaustSlider" onchange="updateFan('exhaust', this.value)">
-        <p>Fan 3 RPM: <span id="rpm3" class="rpm-display">--</span></p>
-        <p>Fan 4 RPM: <span id="rpm4" class="rpm-display">--</span></p>
-      </div>
-      
-      <div class="fan-section">
-        <h2>Troubleshooting</h2>
-        <button onclick="runPWMTest()">Quick PWM Test</button>
-        <p><small>Quickly cycles through 0, 128, 255 PWM values</small></p>
-        
-        <h3>Manual PWM Control</h3>
-        <input type="number" id="manualPWM" min="0" max="255" value="128" placeholder="0-255">
-        <button onclick="setManualPWM()">Set PWM</button>
-        <p><small>Directly set PWM value (0-255) for testing</small></p>
-        
-        <h3>OTA Updates</h3>
-        <p><strong>Hostname:</strong> ESP32-FanController</p>
-        <p><strong>Password:</strong> (stored in secrets.h)</p>
-        <p><small>Use Arduino IDE → Tools → Port → Network Ports to upload wirelessly</small></p>
-      </div>
-      
-      <div class="fan-section">
-        <h2>Auto Mode: <input type="checkbox" id="autoToggle" onchange="toggleAuto(this.checked)"></h2>
-        <p>Temperature: <span id="temp">--</span> °C</p>
-      </div>
-      
-      <script>
-        function updateFan(type, val) {
-          document.getElementById(type === 'intake' ? 'intVal' : 'extVal').textContent = val;
-          fetch('/set?fan=' + type + '&val=' + val);
-        }
-        function toggleAuto(state) {
-          fetch('/mode?m=' + (state ? 'ambient' : 'manual'));
-        }
-        function runPWMTest() {
-          fetch('/test');
-          alert('Quick PWM test running - check serial monitor');
-        }
-        function setManualPWM() {
-          const pwmValue = document.getElementById('manualPWM').value;
-          fetch('/manual?pwm=' + pwmValue);
-          alert('PWM set to ' + pwmValue + ' - check serial monitor');
-        }
-        setInterval(() => {
-          fetch('/temp').then(res => res.text()).then(t => document.getElementById('temp').textContent = t);
-          fetch('/rpm').then(res => res.text()).then(data => {
-            const rpms = data.split(',');
-            document.getElementById('rpm1').textContent = rpms[0];
-            document.getElementById('rpm2').textContent = rpms[1];
-            document.getElementById('rpm3').textContent = rpms[2];
-            document.getElementById('rpm4').textContent = rpms[3];
-          });
-        }, 3000);
-      </script>
-      </body></html>
-    )rawliteral";
+<!DOCTYPE html><html><head>
+<title>Fan Controller</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+  body { font-family: system-ui, sans-serif; margin: 16px; max-width: 700px; }
+  .card { border: 1px solid #ccc; border-radius: 6px; margin: 12px 0; padding: 14px; }
+  .row { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+  .rpm { font-weight: bold; color: #007acc; }
+  .badge { display: inline-block; padding: 2px 8px; border-radius: 10px; font-size: 12px; }
+  .badge-ok    { background: #d6f5d6; color: #186218; }
+  .badge-warn  { background: #fff2cc; color: #7a5b00; }
+  .badge-err   { background: #f7d4d4; color: #8a1a1a; }
+  .status-line { font-size: 12px; color: #666; min-height: 1em; }
+  input[type=range] { flex: 1; }
+  button { padding: 6px 12px; }
+</style>
+</head><body>
+<h1>Fan Controller</h1>
+
+<div class="card">
+  <div class="row">
+    <strong>Mode:</strong>
+    <select id="mode" onchange="setMode(this.value)">
+      <option value="manual">Manual</option>
+      <option value="ambient">Auto (ambient DHT22)</option>
+      <option value="server">Auto (server CPU temp)</option>
+    </select>
+    <span id="srcBadge" class="badge badge-ok">--</span>
+  </div>
+  <p>Server temp avg: <span id="srvTemp">--</span> &deg;C
+     <small id="srvAge"></small></p>
+  <p>Ambient temp: <span id="ambTemp">--</span> &deg;C</p>
+  <div class="row">
+    <strong>Setpoint:</strong>
+    <input type="number" id="setpoint" min="40" max="95" value="70">
+    <button onclick="setSetpoint()">Set</button>
+    <span>&deg;C</span>
+  </div>
+  <p class="status-line" id="statusLine"></p>
+</div>
+
+<div class="card">
+  <h2>Intake fans</h2>
+  <div class="row">
+    <input type="range" min="0" max="255" value="128" id="intakeSlider"
+           oninput="document.getElementById('intVal').textContent=this.value"
+           onchange="updateFan('intake', this.value)">
+    <span>PWM <span id="intVal">128</span></span>
+  </div>
+  <p>RPM: <span id="rpm1" class="rpm">--</span> / <span id="rpm2" class="rpm">--</span></p>
+</div>
+
+<div class="card">
+  <h2>Exhaust fans</h2>
+  <div class="row">
+    <input type="range" min="0" max="255" value="128" id="exhaustSlider"
+           oninput="document.getElementById('extVal').textContent=this.value"
+           onchange="updateFan('exhaust', this.value)">
+    <span>PWM <span id="extVal">128</span></span>
+  </div>
+  <p>RPM: <span id="rpm3" class="rpm">--</span> / <span id="rpm4" class="rpm">--</span></p>
+</div>
+
+<div class="card">
+  <h2>Diagnostics</h2>
+  <button onclick="runPWMTest()">Quick PWM Test</button>
+  <div class="row" style="margin-top:8px;">
+    <input type="number" id="manualPWM" min="0" max="255" value="128">
+    <button onclick="setManualPWM()">Set PWM (pin 25)</button>
+  </div>
+  <p class="status-line" id="diagLine"></p>
+</div>
+
+<script>
+function status(msg, target) {
+  const el = document.getElementById(target || 'statusLine');
+  el.textContent = msg;
+  if (msg) setTimeout(() => { if (el.textContent === msg) el.textContent = ''; }, 4000);
+}
+function updateFan(type, val) {
+  fetch('/set?fan=' + type + '&val=' + val)
+    .then(() => status(type + ' set to ' + val))
+    .catch(() => status('failed', 'statusLine'));
+}
+function setMode(m) {
+  fetch('/mode?m=' + m).then(() => status('mode: ' + m));
+}
+function setSetpoint() {
+  const v = document.getElementById('setpoint').value;
+  fetch('/setpoint?val=' + v).then(() => status('setpoint: ' + v + ' C'));
+}
+function runPWMTest() {
+  fetch('/test').then(() => status('PWM test running', 'diagLine'));
+}
+function setManualPWM() {
+  const v = document.getElementById('manualPWM').value;
+  fetch('/manual?pwm=' + v).then(() => status('manual PWM ' + v, 'diagLine'));
+}
+function refresh() {
+  fetch('/status').then(r => r.json()).then(s => {
+    document.getElementById('ambTemp').textContent = s.ambientC.toFixed(1);
+    document.getElementById('srvTemp').textContent =
+      (s.serverTemp === null) ? '--' : s.serverTemp.toFixed(1);
+    document.getElementById('srvAge').textContent =
+      (s.serverTempAgeMs === null) ? '' : '(' + Math.round(s.serverTempAgeMs/1000) + 's old)';
+    document.getElementById('rpm1').textContent = s.rpm[0];
+    document.getElementById('rpm2').textContent = s.rpm[1];
+    document.getElementById('rpm3').textContent = s.rpm[2];
+    document.getElementById('rpm4').textContent = s.rpm[3];
+    document.getElementById('mode').value = s.modeName;
+    document.getElementById('setpoint').value = s.setpointC;
+    document.getElementById('intakeSlider').value = s.intakePWM;
+    document.getElementById('intVal').textContent = s.intakePWM;
+    document.getElementById('exhaustSlider').value = s.exhaustPWM;
+    document.getElementById('extVal').textContent = s.exhaustPWM;
+    const badge = document.getElementById('srcBadge');
+    badge.textContent = s.controlSource + ' / pwm ' + s.appliedPWM;
+    badge.className = 'badge ' +
+      (s.controlSource === 'server' ? 'badge-ok' :
+       s.controlSource.startsWith('fallback') ? 'badge-warn' : 'badge-ok');
+  }).catch(() => {
+    document.getElementById('srcBadge').className = 'badge badge-err';
+    document.getElementById('srcBadge').textContent = 'offline';
+  });
+}
+refresh();
+setInterval(refresh, 5000);
+</script>
+</body></html>
+)rawliteral";
     request->send(200, "text/html", html);
   });
 
