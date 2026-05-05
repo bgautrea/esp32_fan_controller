@@ -325,7 +325,7 @@ void setup() {
   server.on("/set", HTTP_GET, [](AsyncWebServerRequest *request){
     if (request->hasParam("fan") && request->hasParam("val")) {
       String fan = request->getParam("fan")->value();
-      int val = request->getParam("val")->value().toInt();
+      int val = constrain(request->getParam("val")->value().toInt(), 0, 255);
       Serial.println("Setting " + fan + " fan to " + String(val));
       if (fan == "intake") settings.intakePWM = val;
       else if (fan == "exhaust") settings.exhaustPWM = val;
