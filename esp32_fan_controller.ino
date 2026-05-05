@@ -90,7 +90,7 @@ const int exhaustFan2Channel = 3;
 const int intakeFan1Tach = 32;
 const int intakeFan2Tach = 33;
 const int exhaustFan1Tach = 34;
-const int exhaustFan2Tach = 13;  // Changed to D13 - easily accessible
+const int exhaustFan2Tach = 12;  // D12 — strapping pin, OK as input after boot
 
 // Tachometer variables
 volatile unsigned long tachCount1 = 0;
@@ -114,11 +114,29 @@ const char* password = WIFI_PASSWORD;
 
 float temperatureC = 0;
 
-// Tachometer interrupt functions
-void IRAM_ATTR tachISR1() { tachCount1++; }
-void IRAM_ATTR tachISR2() { tachCount2++; }
-void IRAM_ATTR tachISR3() { tachCount3++; }
-void IRAM_ATTR tachISR4() { tachCount4++; }
+// Tachometer interrupt functions.
+// Real PC fans top out around 3000 RPM × 2 pulses/rev = 100 Hz at the tach line,
+// so any pulse-pair tighter than 200 us is electrical noise, not the fan.
+// micros() rolls over at ~70 minutes; the unsigned subtraction handles wrap.
+volatile unsigned long lastTach1Us = 0, lastTach2Us = 0, lastTach3Us = 0, lastTach4Us = 0;
+const unsigned long TACH_DEBOUNCE_US = 200;
+
+void IRAM_ATTR tachISR1() {
+  unsigned long now = micros();
+  if (now - lastTach1Us >= TACH_DEBOUNCE_US) { tachCount1++; lastTach1Us = now; }
+}
+void IRAM_ATTR tachISR2() {
+  unsigned long now = micros();
+  if (now - lastTach2Us >= TACH_DEBOUNCE_US) { tachCount2++; lastTach2Us = now; }
+}
+void IRAM_ATTR tachISR3() {
+  unsigned long now = micros();
+  if (now - lastTach3Us >= TACH_DEBOUNCE_US) { tachCount3++; lastTach3Us = now; }
+}
+void IRAM_ATTR tachISR4() {
+  unsigned long now = micros();
+  if (now - lastTach4Us >= TACH_DEBOUNCE_US) { tachCount4++; lastTach4Us = now; }
+}
 
 void setupPWM(int pin) {
   // Updated for ESP32 Arduino Core 3.2+ - channels are auto-assigned
