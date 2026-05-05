@@ -18,6 +18,7 @@ struct PICtrl {
 const char* METRICS_URL = "http://192.168.0.110:9101/metrics";
 const unsigned long METRICS_POLL_MS    = 10000;  // 10 s
 const unsigned long METRICS_STALE_MS   = 60000;  // 60 s before considered stale
+const int           FALLBACK_PWM_MIN   = 128;    // safety floor when server signal is stale
 
 struct ServerTemp {
   bool          valid;
@@ -181,10 +182,10 @@ void applyFanSpeeds() {
         controlSource = "server";
         lastAppliedPWM = (int)out;
       } else {
-        // Stale or missing — fallback handled in Task 6. For now, ambient curve.
         int v = computePWMFromTemp();
+        if (v < FALLBACK_PWM_MIN) v = FALLBACK_PWM_MIN;
         intakeValue = exhaustValue = v;
-        controlSource = "fallback-stale";
+        controlSource = serverTemp.valid ? "fallback-stale" : "fallback-no-signal";
         lastAppliedPWM = v;
         resetPid();
       }
