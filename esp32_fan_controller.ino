@@ -396,6 +396,19 @@ void setup() {
     request->send(200, "text/plain", rpmData);
   });
 
+  server.on("/status", HTTP_GET, [](AsyncWebServerRequest *request){
+    String json = "{";
+    json += "\"ambientC\":" + String(temperatureC, 1) + ",";
+    json += "\"rpm\":[" + String(rpm1) + "," + String(rpm2) + "," + String(rpm3) + "," + String(rpm4) + "],";
+    json += "\"intakePWM\":" + String(settings.intakePWM) + ",";
+    json += "\"exhaustPWM\":" + String(settings.exhaustPWM) + ",";
+    json += "\"mode\":" + String(settings.mode) + ",";
+    json += "\"setpointC\":" + String(settings.setpointC) + ",";
+    json += "\"pwmMin\":" + String(settings.pwmMin);
+    json += "}";
+    request->send(200, "application/json", json);
+  });
+
   server.begin();
 }
 
