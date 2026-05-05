@@ -9,7 +9,7 @@
 
 struct PICtrl {
   float kp;
-  float ki;
+  float ki;       // must be > 0; pidStep divides by ki for anti-windup
   float integral;
   float outMin;
   float outMax;
@@ -163,6 +163,7 @@ void applyFanSpeeds() {
       int v = computePWMFromTemp();
       intakeValue = exhaustValue = v;
       controlSource = "ambient";
+      lastAppliedPWM = v;
       break;
     }
     case MODE_AUTO_SERVER: {
@@ -184,6 +185,7 @@ void applyFanSpeeds() {
         int v = computePWMFromTemp();
         intakeValue = exhaustValue = v;
         controlSource = "fallback-stale";
+        lastAppliedPWM = v;
         resetPid();
       }
       break;
@@ -193,6 +195,7 @@ void applyFanSpeeds() {
       intakeValue  = settings.intakePWM;
       exhaustValue = settings.exhaustPWM;
       controlSource = "manual";
+      lastAppliedPWM = intakeValue;
       break;
   }
 
@@ -619,9 +622,11 @@ void loop() {
     lastMetricsPoll = millis();
     float t;
     if (fetchServerTemp(&t)) {
-      serverTemp.valid       = true;
+      // Write data fields before publishing valid=true so a concurrent reader
+      // on the AsyncWebServer task can't see valid=true with stale celsius.
       serverTemp.celsius     = t;
       serverTemp.timestampMs = millis();
+      serverTemp.valid       = true;
       Serial.printf("[metrics] server temp avg = %.1f C\n", t);
     }
     if (settings.mode == MODE_AUTO_SERVER) {
