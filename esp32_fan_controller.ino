@@ -89,7 +89,7 @@ const int exhaustFan2Channel = 3;
 // Tachometer pins - using accessible pins on your board
 const int intakeFan1Tach = 32;
 const int intakeFan2Tach = 33;
-const int exhaustFan1Tach = 34;
+const int exhaustFan1Tach = 13;  // moved from D34 (D34 is input-only, no pullup)
 const int exhaustFan2Tach = 12;  // D12 — strapping pin, OK as input after boot
 
 // Tachometer variables
@@ -350,20 +350,19 @@ void setup() {
   Serial.println("Setting up tachometer pins...");
   
   // Setup pins with pull-up capability
-  pinMode(intakeFan1Tach, INPUT_PULLUP);  // Pin 32 - OK
-  pinMode(intakeFan2Tach, INPUT_PULLUP);  // Pin 33 - OK  
-  pinMode(exhaustFan1Tach, INPUT_PULLUP); // Pin 34 - input only, no pullup but try anyway
-  pinMode(exhaustFan2Tach, INPUT_PULLUP); // Pin 13 - OK
-  
-  attachInterrupt(digitalPinToInterrupt(intakeFan1Tach), tachISR1, FALLING);
-  attachInterrupt(digitalPinToInterrupt(intakeFan2Tach), tachISR2, FALLING);
-  // Skip pin 34 for now since it's input-only and problematic
-  // attachInterrupt(digitalPinToInterrupt(exhaustFan1Tach), tachISR3, FALLING);
+  pinMode(intakeFan1Tach, INPUT_PULLUP);  // D32
+  pinMode(intakeFan2Tach, INPUT_PULLUP);  // D33
+  pinMode(exhaustFan1Tach, INPUT_PULLUP); // D13 (moved from D34)
+  pinMode(exhaustFan2Tach, INPUT_PULLUP); // D12
+
+  attachInterrupt(digitalPinToInterrupt(intakeFan1Tach),  tachISR1, FALLING);
+  attachInterrupt(digitalPinToInterrupt(intakeFan2Tach),  tachISR2, FALLING);
+  attachInterrupt(digitalPinToInterrupt(exhaustFan1Tach), tachISR3, FALLING);
   attachInterrupt(digitalPinToInterrupt(exhaustFan2Tach), tachISR4, FALLING);
-  
+
   lastRPMCalc = millis();
   Serial.println("Tachometer interrupts setup complete");
-  Serial.println("Active tach pins: 32, 33, 13 (pin 34 skipped)");
+  Serial.println("Active tach pins: 32, 33, 13, 12");
 
   // Connect WiFi
   WiFi.begin(ssid, password);
