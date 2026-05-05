@@ -507,6 +507,7 @@ void setup() {
       case MODE_MANUAL:       json += "manual";  break;
       case MODE_AUTO_AMBIENT: json += "ambient"; break;
       case MODE_AUTO_SERVER:  json += "server";  break;
+      default:                json += "unknown"; break;
     }
     json += "\"";
     json += "}";
