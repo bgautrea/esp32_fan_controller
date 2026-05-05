@@ -5,6 +5,19 @@
 #include <DHT.h>
 #include "secrets.h"  // Include our secrets file
 #include <Preferences.h>
+#include <HTTPClient.h>
+
+const char* METRICS_URL = "http://192.168.0.110:9101/metrics";
+const unsigned long METRICS_POLL_MS    = 10000;  // 10 s
+const unsigned long METRICS_STALE_MS   = 60000;  // 60 s before considered stale
+
+struct ServerTemp {
+  bool          valid;
+  float         celsius;
+  unsigned long timestampMs;
+};
+ServerTemp serverTemp = {false, 0.0f, 0};
+unsigned long lastMetricsPoll = 0;
 
 Preferences prefs;
 
@@ -154,6 +167,69 @@ void calculateRPM() {
     tachCount1 = tachCount2 = tachCount3 = tachCount4 = 0;
     lastRPMCalc = millis();
   }
+}
+
+// Parses a Prometheus text-format body and writes the average of all
+// node_thermal_zone_temp_celsius{...,type="x86_pkg_temp"} values to *avgOut.
+// Returns true if at least one matching line was found.
+bool parsePrometheusBody(const String& body, float* avgOut) {
+  int idx = 0, found = 0;
+  float sum = 0;
+  const int len = body.length();
+  while (idx < len) {
+    int eol = body.indexOf('\n', idx);
+    if (eol < 0) eol = len;
+    // Skip comments / empty
+    if (eol > idx && body.charAt(idx) != '#') {
+      // Cheap startsWith without copying
+      if (body.indexOf("node_thermal_zone_temp_celsius{", idx) == idx) {
+        int lineEnd = eol;
+        // Look for x86_pkg_temp within this line only
+        int ttIdx = body.indexOf("x86_pkg_temp", idx);
+        if (ttIdx >= 0 && ttIdx < lineEnd) {
+          // Value follows the last space on the line
+          int sp = body.lastIndexOf(' ', lineEnd - 1);
+          if (sp > idx) {
+            String valStr = body.substring(sp + 1, lineEnd);
+            float v = valStr.toFloat();
+            sum += v;
+            found++;
+          }
+        }
+      }
+    }
+    idx = eol + 1;
+  }
+  if (found == 0) return false;
+  *avgOut = sum / found;
+  return true;
+}
+
+bool fetchServerTemp(float* out) {
+  if (WiFi.status() != WL_CONNECTED) {
+    Serial.println("[metrics] wifi not connected");
+    return false;
+  }
+  HTTPClient http;
+  http.setConnectTimeout(2000);
+  http.setTimeout(3000);
+  if (!http.begin(METRICS_URL)) {
+    Serial.println("[metrics] http.begin failed");
+    return false;
+  }
+  int code = http.GET();
+  if (code != 200) {
+    Serial.printf("[metrics] HTTP %d\n", code);
+    http.end();
+    return false;
+  }
+  String body = http.getString();
+  http.end();
+  if (!parsePrometheusBody(body, out)) {
+    Serial.println("[metrics] no x86_pkg_temp lines parsed");
+    return false;
+  }
+  return true;
 }
 
 void setup() {
@@ -409,6 +485,18 @@ void setup() {
     request->send(200, "application/json", json);
   });
 
+  server.on("/debug/server-temp", HTTP_GET, [](AsyncWebServerRequest *request){
+    String body;
+    if (!serverTemp.valid) {
+      body = "{\"valid\":false}";
+    } else {
+      unsigned long age = millis() - serverTemp.timestampMs;
+      body = "{\"valid\":true,\"celsius\":" + String(serverTemp.celsius, 1) +
+             ",\"ageMs\":" + String(age) + "}";
+    }
+    request->send(200, "application/json", body);
+  });
+
   server.begin();
 }
 
@@ -425,4 +513,15 @@ void loop() {
   }
   
   calculateRPM();
+
+  if (millis() - lastMetricsPoll >= METRICS_POLL_MS) {
+    lastMetricsPoll = millis();
+    float t;
+    if (fetchServerTemp(&t)) {
+      serverTemp.valid       = true;
+      serverTemp.celsius     = t;
+      serverTemp.timestampMs = millis();
+      Serial.printf("[metrics] server temp avg = %.1f C\n", t);
+    }
+  }
 }
