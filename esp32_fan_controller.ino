@@ -21,6 +21,12 @@ unsigned long lastMetricsPoll = 0;
 
 Preferences prefs;
 
+enum Mode : uint8_t {
+  MODE_MANUAL        = 0,
+  MODE_AUTO_AMBIENT  = 1,
+  MODE_AUTO_SERVER   = 2,
+};
+
 struct Settings {
   uint8_t intakePWM = 128;
   uint8_t exhaustPWM = 128;
@@ -116,22 +122,33 @@ void setupPWM(int pin) {
 }
 
 void applyFanSpeeds() {
-  int intakeValue = (settings.mode != 0) ? computePWMFromTemp() : settings.intakePWM;
-  int exhaustValue = (settings.mode != 0) ? computePWMFromTemp() : settings.exhaustPWM;
+  int intakeValue, exhaustValue;
+  switch (settings.mode) {
+    case MODE_AUTO_AMBIENT: {
+      int v = computePWMFromTemp();
+      intakeValue = exhaustValue = v;
+      break;
+    }
+    case MODE_AUTO_SERVER: {
+      // Stub — Task 5 wires up the PID. For now, fall through to ambient.
+      int v = computePWMFromTemp();
+      intakeValue = exhaustValue = v;
+      break;
+    }
+    case MODE_MANUAL:
+    default:
+      intakeValue  = settings.intakePWM;
+      exhaustValue = settings.exhaustPWM;
+      break;
+  }
 
-  ledcWrite(intakeFan1, intakeValue);
-  ledcWrite(intakeFan2, intakeValue);
+  ledcWrite(intakeFan1,  intakeValue);
+  ledcWrite(intakeFan2,  intakeValue);
   ledcWrite(exhaustFan1, exhaustValue);
   ledcWrite(exhaustFan2, exhaustValue);
 
-  // Debug output with more detail
-  Serial.println("=== PWM Update ===");
-  Serial.println("Auto mode: " + String((settings.mode != 0) ? "ON" : "OFF"));
-  Serial.println("Temperature: " + String(temperatureC) + "°C");
-  Serial.println("Intake PWM target: " + String(settings.intakePWM) + " -> Applied: " + String(intakeValue));
-  Serial.println("Exhaust PWM target: " + String(settings.exhaustPWM) + " -> Applied: " + String(exhaustValue));
-  Serial.println("Pin " + String(intakeFan1) + " set to: " + String(intakeValue));
-  Serial.println("==================");
+  Serial.printf("[fans] mode=%u tempA=%.1f intake=%d exhaust=%d\n",
+                settings.mode, temperatureC, intakeValue, exhaustValue);
 }
 
 int computePWMFromTemp() {
@@ -411,9 +428,13 @@ void setup() {
     request->send(200, "text/plain", "OK");
   });
 
-  server.on("/auto", HTTP_GET, [](AsyncWebServerRequest *request){
-    if (request->hasParam("mode")) {
-      settings.mode = (request->getParam("mode")->value() == "1") ? 1 : 0;
+  server.on("/mode", HTTP_GET, [](AsyncWebServerRequest *request){
+    if (request->hasParam("m")) {
+      String m = request->getParam("m")->value();
+      if      (m == "manual")  settings.mode = MODE_MANUAL;
+      else if (m == "ambient") settings.mode = MODE_AUTO_AMBIENT;
+      else if (m == "server")  settings.mode = MODE_AUTO_SERVER;
+      else { request->send(400, "text/plain", "bad mode"); return; }
       saveSettings();
       applyFanSpeeds();
     }
@@ -481,6 +502,13 @@ void setup() {
     json += "\"mode\":" + String(settings.mode) + ",";
     json += "\"setpointC\":" + String(settings.setpointC) + ",";
     json += "\"pwmMin\":" + String(settings.pwmMin);
+    json += ",\"modeName\":\"";
+    switch (settings.mode) {
+      case MODE_MANUAL:       json += "manual";  break;
+      case MODE_AUTO_AMBIENT: json += "ambient"; break;
+      case MODE_AUTO_SERVER:  json += "server";  break;
+    }
+    json += "\"";
     json += "}";
     request->send(200, "application/json", json);
   });
