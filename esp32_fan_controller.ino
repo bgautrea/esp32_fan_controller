@@ -7,6 +7,14 @@
 #include <Preferences.h>
 #include <HTTPClient.h>
 
+struct PICtrl {
+  float kp;
+  float ki;
+  float integral;
+  float outMin;
+  float outMax;
+};
+
 const char* METRICS_URL = "http://192.168.0.110:9101/metrics";
 const unsigned long METRICS_POLL_MS    = 10000;  // 10 s
 const unsigned long METRICS_STALE_MS   = 60000;  // 60 s before considered stale
@@ -121,24 +129,70 @@ void setupPWM(int pin) {
   Serial.println("Initial PWM set to 0 for pin " + String(pin));
 }
 
+// Conservative starting gains. Setpoint of 70 C, error in C, output in PWM (0-255).
+// kp=12: every 1 C above setpoint adds 12 to PWM.
+// ki=0.2 with 10 s loop: 1 C error for 10 s adds 2 to PWM. Slow trim.
+PICtrl piCtl = {12.0f, 0.2f, 0.0f, 60.0f, 255.0f};
+
+unsigned long lastPidStepMs = 0;
+
+float pidStep(PICtrl* c, float error, float dtSec) {
+  c->integral += error * dtSec;
+  // Anti-windup: clamp integral so ki*integral can never push past output range.
+  float iMax = (c->outMax - c->outMin) / c->ki;
+  if (c->integral > iMax)  c->integral = iMax;
+  if (c->integral < 0.0f)  c->integral = 0.0f;  // never accumulate cooling credit
+  float out = c->outMin + c->kp * error + c->ki * c->integral;
+  if (out < c->outMin) out = c->outMin;
+  if (out > c->outMax) out = c->outMax;
+  return out;
+}
+
+void resetPid() {
+  piCtl.integral = 0.0f;
+  lastPidStepMs  = 0;
+}
+
+const char* controlSource = "manual";  // updated each applyFanSpeeds() call
+int         lastAppliedPWM = 0;        // most recent PID/curve output
+
 void applyFanSpeeds() {
   int intakeValue, exhaustValue;
   switch (settings.mode) {
     case MODE_AUTO_AMBIENT: {
       int v = computePWMFromTemp();
       intakeValue = exhaustValue = v;
+      controlSource = "ambient";
       break;
     }
     case MODE_AUTO_SERVER: {
-      // Stub — Task 5 wires up the PID. For now, fall through to ambient.
-      int v = computePWMFromTemp();
-      intakeValue = exhaustValue = v;
+      if (serverTemp.valid &&
+          (millis() - serverTemp.timestampMs) <= METRICS_STALE_MS) {
+        // Fresh signal: run PID
+        piCtl.outMin = settings.pwmMin;
+        unsigned long now = millis();
+        float dtSec = (lastPidStepMs == 0) ? 1.0f : (now - lastPidStepMs) / 1000.0f;
+        if (dtSec > 30.0f) dtSec = 30.0f;  // clamp first call after long gap
+        lastPidStepMs = now;
+        float error = serverTemp.celsius - (float)settings.setpointC;
+        float out = pidStep(&piCtl, error, dtSec);
+        intakeValue = exhaustValue = (int)out;
+        controlSource = "server";
+        lastAppliedPWM = (int)out;
+      } else {
+        // Stale or missing — fallback handled in Task 6. For now, ambient curve.
+        int v = computePWMFromTemp();
+        intakeValue = exhaustValue = v;
+        controlSource = "fallback-stale";
+        resetPid();
+      }
       break;
     }
     case MODE_MANUAL:
     default:
       intakeValue  = settings.intakePWM;
       exhaustValue = settings.exhaustPWM;
+      controlSource = "manual";
       break;
   }
 
@@ -441,6 +495,18 @@ void setup() {
     request->send(200, "text/plain", "OK");
   });
 
+  server.on("/setpoint", HTTP_GET, [](AsyncWebServerRequest *request){
+    if (request->hasParam("val")) {
+      int v = request->getParam("val")->value().toInt();
+      v = constrain(v, 40, 95);
+      settings.setpointC = (uint8_t)v;
+      saveSettings();
+      resetPid();           // start fresh after setpoint change
+      applyFanSpeeds();
+    }
+    request->send(200, "text/plain", "OK");
+  });
+
   server.on("/temp", HTTP_GET, [](AsyncWebServerRequest *request){
     request->send(200, "text/plain", String(temperatureC));
   });
@@ -510,6 +576,14 @@ void setup() {
       default:                json += "unknown"; break;
     }
     json += "\"";
+    json += ",\"serverTemp\":";
+    if (serverTemp.valid) json += String(serverTemp.celsius, 1);
+    else                  json += "null";
+    json += ",\"serverTempAgeMs\":";
+    json += (serverTemp.valid ? String(millis() - serverTemp.timestampMs) : String("null"));
+    json += ",\"controlSource\":\"" + String(controlSource) + "\"";
+    json += ",\"appliedPWM\":" + String(lastAppliedPWM);
+    json += ",\"pidIntegral\":" + String(piCtl.integral, 2);
     json += "}";
     request->send(200, "application/json", json);
   });
@@ -530,18 +604,16 @@ void setup() {
 }
 
 void loop() {
-  ArduinoOTA.handle();  // Handle OTA updates
-  
+  ArduinoOTA.handle();
+
   static unsigned long lastTempRead = 0;
   if (millis() - lastTempRead > 3000) {
     lastTempRead = millis();
     readTemp();
-    if (settings.mode != 0) {
+    if (settings.mode == MODE_AUTO_AMBIENT) {
       applyFanSpeeds();
     }
   }
-  
-  calculateRPM();
 
   if (millis() - lastMetricsPoll >= METRICS_POLL_MS) {
     lastMetricsPoll = millis();
@@ -552,5 +624,10 @@ void loop() {
       serverTemp.timestampMs = millis();
       Serial.printf("[metrics] server temp avg = %.1f C\n", t);
     }
+    if (settings.mode == MODE_AUTO_SERVER) {
+      applyFanSpeeds();
+    }
   }
+
+  calculateRPM();
 }
