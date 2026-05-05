@@ -388,7 +388,7 @@ void setup() {
           fetch('/set?fan=' + type + '&val=' + val);
         }
         function toggleAuto(state) {
-          fetch('/auto?mode=' + (state ? '1' : '0'));
+          fetch('/mode?m=' + (state ? 'ambient' : 'manual'));
         }
         function runPWMTest() {
           fetch('/test');
