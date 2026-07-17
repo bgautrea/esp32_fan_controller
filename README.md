@@ -1,195 +1,137 @@
 # ESP32 Smart Fan Controller
 
-A WiFi-enabled smart fan controller built on ESP32 that provides web-based PWM fan speed control, real-time RPM monitoring, temperature-based automation, and over-the-air (OTA) firmware updates.
+A WiFi-enabled fan controller built on ESP32 that provides a web-based control
+UI (reachable at **http://fan.local**), PWM speed control for four 4-pin fans,
+real-time RPM monitoring, temperature-based automation, and over-the-air
+firmware updates from the browser.
 
-![ESP32 Fan Controller](https://img.shields.io/badge/ESP32-Fan%20Controller-blue) ![Arduino](https://img.shields.io/badge/Arduino-IDE-00979D) ![License](https://img.shields.io/badge/License-MIT-green)
+![ESP32 Fan Controller](https://img.shields.io/badge/ESP32-Fan%20Controller-blue) ![PlatformIO](https://img.shields.io/badge/PlatformIO-esp32dev-orange) ![License](https://img.shields.io/badge/License-MIT-green)
 
 ## ✨ Features
 
-- 🌐 **Web-based Control Interface** - Control fans from any device on your network
-- ⚡ **PWM Speed Control** - Variable speed control for 4-pin PWM fans (0-100%)
-- 📊 **Real-time RPM Monitoring** - Live tachometer readings for each fan
-- 🌡️ **Temperature-based Automation** - Automatic fan speed adjustment based on DHT22 sensor
-- 🔄 **OTA Updates** - Upload new firmware wirelessly via Arduino IDE
-- 🎛️ **Manual Override** - Direct PWM control for testing and debugging
-- 🔒 **Secure Configuration** - Credentials stored in separate header file
+- 🌐 **Web control UI** — dark, responsive, reachable at `http://fan.local` (mDNS)
+- ⚡ **PWM speed control** — independent intake / exhaust duty (0–255)
+- 📊 **Real-time RPM** — live tachometer readings per fan
+- 🌡️ **Temperature automation** — auto mode drives speed from a DHT22 curve
+- 🔄 **Browser OTA** — upload new firmware from the UI, no Arduino IDE needed
+- 💾 **Persistent settings** — intake / exhaust / auto survive reboots (NVS)
+- 🔒 **Secrets kept separate** — credentials live in a gitignored header
 
-## 🛠️ Hardware Requirements
+## 🛠️ Hardware
 
 ### Components
 - **ESP32 Development Board** (tested with ESP32 DevKitV1)
 - **4-pin PWM Fans** (tested with Noctua NF-F12)
 - **DHT22 Temperature Sensor**
 - **12V Power Supply** (for fans)
-- **Breadboard and Jumper Wires**
 
-### Wiring Diagram
+### Wiring
 
-| Component | ESP32 Pin | Wire Color | Notes |
-|-----------|-----------|------------|-------|
-| **Fan 1 PWM** | D25 | Blue (Noctua) | PWM signal |
-| **Fan 1 Tach** | D32 | Green (Noctua) | RPM feedback |
-| **Fan 2 PWM** | D26 | Blue | PWM signal |
-| **Fan 2 Tach** | D33 | Green | RPM feedback |
-| **Fan 3 PWM** | D27 | Blue | PWM signal |
-| **Fan 4 PWM** | D14 | Blue | PWM signal |
-| **DHT22 Data** | D4 | - | Temperature sensor |
-| **DHT22 VCC** | 3.3V | - | Power |
-| **DHT22 GND** | GND | - | Ground |
-| **Fan VCC** | External 12V | Yellow | Fan power |
-| **Fan GND** | GND | Black | Common ground |
+| Component | ESP32 Pin | Notes |
+|-----------|-----------|-------|
+| Intake Fan 1 PWM  | D25 | PWM signal |
+| Intake Fan 1 Tach | D32 | RPM feedback |
+| Intake Fan 2 PWM  | D26 | PWM signal |
+| Intake Fan 2 Tach | D33 | RPM feedback |
+| Exhaust Fan 1 PWM  | D27 | PWM signal |
+| Exhaust Fan 1 Tach | D12 | RPM feedback (GPIO12 is a boot strapping pin — see `main.cpp`) |
+| Exhaust Fan 2 PWM  | D14 | PWM signal |
+| Exhaust Fan 2 Tach | D13 | RPM feedback |
+| DHT22 Data | D4 | Temperature sensor |
+| DHT22 VCC / GND | 3.3V / GND | Power |
+| Fan VCC / GND | External 12V / GND | Common ground with ESP32 |
 
-> ⚠️ **Important**: Noctua fans use non-standard wire colors! Blue = PWM, Green = Tach (opposite of most fans)
+> ⚠️ Noctua fans use non-standard wire colors: Blue = PWM, Green = Tach.
 
-## 📋 Software Requirements
+All pin assignments live in [`include/config.h`](include/config.h).
 
-- **Arduino IDE** (1.8.x or 2.x)
-- **ESP32 Arduino Core** (3.0+)
+## 📋 Software
 
-### Required Libraries
+Built with **PlatformIO** (ESP32 Arduino core 3.x). Dependencies are declared in
+[`platformio.ini`](platformio.ini) and fetched automatically:
+
+- `adafruit/DHT sensor library`
+- `adafruit/Adafruit Unified Sensor`
+
+Project layout (mirrors the companion 7-segment clock project):
+
 ```
-ESPAsyncWebServer
-DHT sensor library
-```
-
-Install via Arduino IDE Library Manager:
-1. `Tools` → `Manage Libraries`
-2. Search and install:
-   - "ESPAsyncWebServer" by Hristo Gochkov
-   - "DHT sensor library" by Adafruit
-
-## 🚀 Installation
-
-### 1. Clone Repository
-```bash
-git clone https://github.com/yourusername/esp32-fan-controller.git
-cd esp32-fan-controller
+platformio.ini
+include/config.h        # hardware config (pins, PWM, temp curve)
+include/webpage.h       # the web UI (served from flash)
+include/secrets.h       # WiFi + OTA credentials (gitignored)
+src/main.cpp            # firmware
 ```
 
-### 2. Configure Credentials
-Create a `secrets.h` file in the project directory:
+## 🚀 Build & flash
 
-```cpp
-// secrets.h - Keep this file out of version control!
-#ifndef SECRETS_H
-#define SECRETS_H
-
-// WiFi Credentials
-#define WIFI_SSID "YourWiFiName"
-#define WIFI_PASSWORD "YourWiFiPassword"
-
-// OTA Password
-#define OTA_PASSWORD "YourOTAPassword"
-
-#endif
-```
-
-### 3. Upload Firmware
-1. Open `esp32-fan-controller.ino` in Arduino IDE
-2. Select your ESP32 board: `Tools` → `Board` → `ESP32 Dev Module`
-3. Select the correct port: `Tools` → `Port`
-4. Click **Upload**
-
-### 4. Find Your Device
-Check the Serial Monitor (115200 baud) for the IP address:
-```
-WiFi connected!
-IP address: 192.168.1.100
-```
+1. **Configure credentials** — copy the template and edit it:
+   ```
+   cp include/secrets.h.example include/secrets.h
+   # then set WIFI_SSID / WIFI_PASSWORD / OTA_PASSWORD
+   ```
+2. **Build**:
+   ```
+   pio run -e esp32dev
+   ```
+3. **Flash over USB** (first time):
+   ```
+   pio run -e esp32dev -t upload
+   ```
+   If the wrong serial port is picked, set `upload_port` / `monitor_port` in
+   `platformio.ini`.
+4. **Find the device** — open the serial monitor (115200 baud); it prints
+   `mDNS: http://fan.local/` once WiFi connects. Browse to
+   **http://fan.local**.
 
 ## 📱 Usage
 
-### Web Interface
-Navigate to your ESP32's IP address in a web browser:
-```
-http://192.168.1.100
-```
+The web UI provides:
+- **Auto mode** — Off / On. When on, both banks follow the temperature curve and
+  the sliders are disabled.
+- **Intake / Exhaust speed** — 0–255 sliders with live RPM readouts.
+- **Firmware update** — upload a `.bin` (see OTA below).
 
-### Features Available:
-- **Fan Speed Control**: Adjust intake and exhaust fan speeds (0-255)
-- **Auto Mode**: Enable temperature-based automatic control
-- **RPM Monitoring**: Real-time display of fan speeds
-- **Manual PWM Testing**: Direct PWM value input for troubleshooting
+### Temperature curve (auto mode)
 
-### Temperature Thresholds (Auto Mode)
-| Temperature | Fan Speed |
-|-------------|-----------|
-| < 25°C | 20% (50 PWM) |
-| 25-30°C | 39% (100 PWM) |
-| 30-35°C | 71% (180 PWM) |
-| > 35°C | 100% (255 PWM) |
+| Temperature | PWM |
+|-------------|-----|
+| < 25 °C | 50  |
+| 25–30 °C | 100 |
+| 30–35 °C | 180 |
+| ≥ 35 °C | 255 |
 
-## 🔄 OTA Updates
+Thresholds are in [`include/config.h`](include/config.h).
 
-After initial USB upload, you can update wirelessly:
+## 🔄 OTA updates (browser push)
 
-1. In Arduino IDE: `Tools` → `Port` → `Network Ports` → `ESP32-FanController`
-2. Enter your OTA password when prompted
-3. Upload normally - it goes over WiFi!
+After the first USB flash, update wirelessly — no Arduino IDE:
 
-## 🔧 Configuration
+- **From the UI**: build (`pio run`), open the **Firmware update** card, choose
+  `.pio/build/esp32dev/firmware.bin`, click Upload, and enter the OTA password
+  (`OTA_PASSWORD` in `secrets.h`, username `admin`). The device flashes and
+  reboots.
+- **From the CLI**:
+  ```
+  curl.exe -u admin:YOUR_OTA_PASSWORD \
+       -F "firmware=@.pio/build/esp32dev/firmware.bin" \
+       http://fan.local/update
+  ```
 
-### PWM Settings
-- **Frequency**: 25 kHz (adjustable in code)
-- **Resolution**: 8-bit (0-255 values)
-- **Pins**: D25, D26, D27, D14
-
-### Tachometer Settings  
-- **Pins**: D32, D33, D13 (D34 skipped - input only)
-- **Trigger**: Falling edge
-- **Calculation**: 2 pulses per revolution (standard for PC fans)
+The upload is an outbound HTTP POST from your machine, so no PC-firewall rules
+are needed.
 
 ## 🐛 Troubleshooting
 
-### Fan Not Responding to PWM
-1. **Check wiring** - Ensure PWM wire is connected to correct pin
-2. **Verify fan compatibility** - Must be 4-pin PWM fan
-3. **Try different frequency** - Change `PWM_FREQ` from 25000 to 1000
-4. **Check power** - Fans need 12V power supply
-
-### No RPM Readings
-1. **Check tachometer wiring** - Ensure tach wire is connected
-2. **Verify pin compatibility** - Avoid input-only pins (34, 35)
-3. **Check pull-up resistors** - Some pins need external pull-ups
-
-### WiFi Connection Issues
-1. **Verify credentials** in `secrets.h`
-2. **Check signal strength** - ESP32 might be too far from router
-3. **Monitor Serial output** for connection status
-
-### OTA Upload Fails
-1. **Check network connectivity** - ESP32 and computer on same network
-2. **Verify OTA password** - Must match `secrets.h`
-3. **Restart ESP32** - Sometimes helps with network discovery
-
-## 🤝 Contributing
-
-1. Fork the repository
-2. Create a feature branch (`git checkout -b feature/AmazingFeature`)
-3. Commit your changes (`git commit -m 'Add some AmazingFeature'`)
-4. Push to the branch (`git push origin feature/AmazingFeature`)
-5. Open a Pull Request
+- **Fan not responding to PWM** — confirm it's a 4-pin fan on the right pin; try
+  `PWM_FREQ` 1000 instead of 25000 in `config.h`; check the 12V supply.
+- **No RPM** — check the tach wire; exhaust fan 1 (D34) is intentionally not read
+  (input-only pin) and always shows `--`.
+- **`fan.local` won't resolve** — ensure your OS supports mDNS/Bonjour; fall back
+  to the IP printed on the serial monitor, or `ping fan.local`.
+- **OTA fails** — verify the OTA password matches `secrets.h`; make sure the
+  device and your computer are on the same network.
 
 ## 📄 License
 
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
-
-## 🙏 Acknowledgments
-
-- **Noctua** for excellent PWM fans with clear documentation
-- **ESP32 Community** for comprehensive Arduino core
-- **Adafruit** for reliable sensor libraries
-
-## 📞 Support
-
-If you encounter issues:
-1. Check the troubleshooting section above
-2. Review the Serial Monitor output
-3. Open an issue on GitHub with:
-   - Hardware setup details
-   - Serial Monitor output
-   - Steps to reproduce the problem
-
----
-
-**Made with ❤️ for the maker community**
+MIT — see [LICENSE](LICENSE).
