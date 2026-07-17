@@ -31,20 +31,23 @@
 // Standard 4-pin fan: green wire = tach (sense). Most PC fans emit 2 pulses
 // per revolution. All four are real GPIOs with internal pull-ups and interrupt
 // support (the original sketch had exhaust fan 1 on the input-only GPIO34 and
-// skipped it — the green wire actually lands on GPIO12).
+// skipped it — the green wires actually land on GPIO13 and GPIO12). Pin mapping
+// matches the canonical assignment on the Arduino main branch.
 #define INTAKE_FAN1_TACH   32
 #define INTAKE_FAN2_TACH   33
-#define EXHAUST_FAN1_TACH  12   // NOTE: GPIO12 is a boot strapping pin (see main.cpp)
-#define EXHAUST_FAN2_TACH  13
+#define EXHAUST_FAN1_TACH  13
+#define EXHAUST_FAN2_TACH  12   // NOTE: GPIO12 is a boot strapping pin (see main.cpp)
 #define TACH_PULSES_PER_REV 2
 
-// Ignore tach edges closer together than this. A fan's open-collector tach has
-// slow/ringing edges that make the ESP32's edge interrupt fire several times
-// per real pulse, inflating the count. The fans here are Noctua NF-F12 PWM,
-// max 1500 RPM = 2 pulses/rev = 50 Hz = a 20 ms pulse spacing, so an 8 ms window
-// blocks the spurious double-edges while never dropping a real pulse (that would
-// need >3750 RPM). Empirically: 1 ms window read ~4x high, 2.5 ms ~2x, 8 ms ~1x.
-#define TACH_DEBOUNCE_US  8000
+// Ignore tach edges closer together than this. At low PWM duty, PSU ripple
+// (120 Hz US mains, 100 Hz EU) couples onto the open-collector tach line and
+// fires the edge interrupt several times per real pulse, inflating the count.
+// The fans are Noctua NF-F12 PWM, max 1500 RPM = 2 pulses/rev = 50 Hz = 20 ms
+// spacing, so a 10 ms window rejects the ripple (8-10 ms apart) while never
+// dropping a real pulse (that would need >3000 RPM). Empirically: 1 ms read ~4x
+// high, 2.5 ms ~2x, 8-10 ms ~1x. True hardware fix: 100 nF from each tach pin
+// to GND. (Root cause + 10 ms value carried over from the Arduino main branch.)
+#define TACH_DEBOUNCE_US  10000
 
 // ---------- Temperature sensor ----------
 #define DHT_PIN   4
